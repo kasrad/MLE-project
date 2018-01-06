@@ -1,0 +1,9 @@
+One class SVM - read
+predicting rare events
+
+take a look at the data, think about question we can ask dmitri
+oversampling + undersampling
+
+https://machinelearningmastery.com/tactics-to-combat-imbalanced-classes-in-your-machine-learning-dataset/
+
+wait till category_id's are obtained and remove 'fake ads' (i.e. samsung galaxy note 8 for 9e+8 price)

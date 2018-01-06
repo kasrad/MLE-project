@@ -1,0 +1,112 @@
+---
+title: "Group Assignment 2"
+author: "Kasparek, Saaliti, Kozuch"
+date: "25 listopadu 2017"
+output: html_document
+---
+<<<<<<< HEAD
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+knitr::opts_chunk$set(cache=TRUE, cache.path = 'C:/Users/Samuel/Documents/ML_Naspers')
+```
+=======
+>>>>>>> parent of f50a6d6... For loop with different metrics
+
+#Group Assignment 2
+
+##1) 
+```{r}
+library(keras)
+library(glmnet)
+
+#train/test division
+mnist <- dataset_mnist()
+x_train <- mnist$train$x
+y_train <- mnist$train$y
+x_test <- mnist$test$x
+y_test <- mnist$test$y
+
+
+# preparation of the dataset (reshape - rescale - to_categorical)
+x_train <- array_reshape(x_train, c(nrow(x_train), 784))
+x_test <- array_reshape(x_test, c(nrow(x_test), 784))
+
+x_train <- x_train / 255
+x_test <- x_test / 255
+
+y_train_logit <- as.factor(y_train)
+y_test_logit <- as.factor(y_test)
+y_train <- to_categorical(y_train, 10)
+y_test <- to_categorical(y_test, 10)
+```
+
+
+Here we present the logit model. We decided to use only subset of the data as this  significantly speeds up the analysis. 
+```{r}
+logit <- cv.glmnet(x_train[1:500, ], y_train_logit[1:500], family = "multinomial")
+pred_logit <- predict(logit, x_test[1:500, ], type = "class")
+print(paste('The accuracy is ', mean(pred_logit == y_test_logit[1:500]),'.', sep = ''))
+```
+
+The accuracy is not especially high, however as it is not the goal of this assignment, we won't optimize this model.
+
+
+
+##2) What do the dropout layers do?
+
+The dropout layers prevent overfitting. For every such layer, a percentage is specified. This number denotes the percentage of neurons that are randomly muted during one training phase. This forces our network to learn multiple representations of the pattern and spread the 'understanding' of the features amongst several neurons rather than place all the emphasis on one. It is important to turn off the dropout for developing and testing as our network performance would be partly determined by random choice of the 'muted' neurons.
+
+##3) When should you use *relu* activation functions and when *softmax*?
+
+The softmax activation functions are mostly used as the activation functions of the output layer in classification problems. This is due to the fact that their value ranges between 0 and 1 and the sum of all values is always 1. This makes them a suitable functions for modelling probability distributions. Also, these properties allows for direct interpretation of the output value as 'the probability of input being of this class'.
+
+The relu activation functions are usually used in hidden layer as they somehow reduce the 'vanishing gradient' problem. Their key property is that their derivative is either zero or one, which makes the derivatives easy to calculate. This is especially important for backpropagation in deep neural networks. In some applications it is beneficial to use 'leaky ReLUs', as these prevent excessive 'dying' of neurons.
+
+##4)  When is accuracy not an appropriate success metric? What are good alternatives?
+
+The accuracy is not an appropriate metric when one of the classes is underrepresented. For example if we have binary classification problem and only 2% of our data are marked as 'success', by simple prediction algorithm that ascribes every datapoint outcome 'failure', we get accuracy 98%. This number is very high, however, it does not mean that our predictive model is very good.
+
+Good alternatives maybe AIC, BIC or AUC. AIC and BIC are closely related and allows for comparison amongst models. The AIC is  given by $$AIC = 2k - 2\ln(\hat{L})\qquad\qquad\qquad\qquad\qquad,$$ where $\hat{L}$ denotes the maximum value of the likelihood function for the model and $k$ denotes the number of paramaters. Therefore AIC rewards goodnes-of-fit and punishes for additional parameters. Unfortunately, the AIC alone does not say anything about the quality of the model, rather it allows for comparisons amongst models. AUC is denoted by $\int_{0}^{1}{ROC}\qquad\qquad\qquad\qquad\qquad\qquad,$ where ROC stands for *Receiver Operating Curve*. This curve plots the True positive rate against False positive rate. This metric could be very well used in datasets with underrepresented class. 
+
+
+##5) What is categorical cross entropy?
+
+This cost function is used because of its properties. The function is given by:$$C = - \frac{1}{n}\sum_{x}[y \ln{a} + (1-y) \ln{(1-a)}]$$ where $a = \sigma(z)$ is the output of the last layer. This function is very convenient for backpropagation, as the derivative of this function w.r.t to weights $w$ and bias terms $b$ is equal to: $$\frac{\partial C}{\partial w_{j}} = \frac{1}{n}\sum_{x} x_{j}(\sigma(z) - y)$$$$\frac{\partial C}{\partial b} = \frac{1}{n}\sum_{x} (\sigma(z) - y)$$ This means that for large error the neural net learns faster and for smaller error the neural net makes smaller steps.
+
+*Note that the simplified expressions above hold for one neuron net. The generalization to larger nets is straightforward and is thorougly discussed here: http://neuralnetworksanddeeplearning.com/chap3.html#the_cross-entropy_cost_function*
+
+##6) What are are epochs?
+An epoch is one forward pass and one backward pass of all the points in the training dataset through the neural net.
+
+##7) What are batches?
+A batches are subsets of training data. The net is training on these batches as it is one of possible ways to avoid overfitting and as it is a very convenient way to reduce the computational complexity. For example if our training dataset has 10000 data points and we select the *batch size* to be 200, we need 500 *iterations* to complete one *epoch*.
+
+##8) What is the validation split?
+Validation split denotes the ratio of your data you use as the *training set* and the *validation set*. There is possible some confusion with the *test set*. The training set is used to fit the models; the validation set is used to estimate prediction error for model selection; the test set is used for assessment of the generalization error of the final chosen model. Ideally, the test set should be kept in a vault, and be brought out only at the end of the data analysis.
+
+##9) Build and train a logistic regression model in keras
+```{r}
+# logit in keras
+model_log_nn <- keras_model_sequential() 
+
+model_log_nn %>% 
+  layer_dense(units = 10, activation = 'sigmoid', input_shape = c(784))
+  
+summary(model_log_nn)
+
+model_log_nn %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+
+history_log <- model_log_nn %>% fit(
+  x_train, y_train, 
+  epochs = 30, batch_size = 128, 
+  validation_split = 0.2
+)
+plot(history_log)
+
+model_log_nn %>% predict_classes(x_test) %>% head()
+model_log_nn %>% evaluate(x_test, y_test)
+```

@@ -1,0 +1,272 @@
+---
+title: "Group Assignment 2"
+author: "Kasparek, Saaliti, Kozuch"
+date: "03.12.2017"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE)
+
+library(keras)
+library(glmnet)
+library(tensorflow)
+library(dplyr)
+library(mlr)
+library(feather)
+```
+
+```{r setup_for_Q1_Q9, include=F}
+load('C:/Users/Samuel/OneDrive/UvA/S01P02/Machine Learning for Econometrics/Assignments/Group/mnist.RData')
+```
+
+### Question 2 - What do the dropout layers do?
+
+The dropout layers prevent overfitting. For every such layer, a percentage is specified. This number denotes the percentage of neurons that are randomly muted during one training phase. This forces our network to learn multiple representations of the pattern and spread the 'understanding' of the features amongst several neurons rather than place all the emphasis on one. It is important to turn off the dropout for developing and testing as our network performance would be partly determined by random choice of the 'muted' neurons.
+
+### Question 3 - When should you use *relu* activation functions and when *softmax*?
+
+The softmax activation functions are mostly used as the activation functions of the output layer in classification problems. This is due to the fact that their value ranges between 0 and 1 and the sum of all values is always 1. This makes them a suitable functions for modelling probability distributions. Also, these properties allows for direct interpretation of the output value as 'the probability of input being of this class'.
+
+The relu activation functions are usually used in hidden layer as they somehow reduce the 'vanishing gradient' problem. Their key property is that their derivative is either zero or one, which makes the derivatives easy to calculate. This is especially important for backpropagation in deep neural networks. In some applications it is beneficial to use 'leaky ReLUs', as these prevent excessive 'dying' of neurons.
+
+### Question 4 - When is accuracy not an appropriate success metric? What are good alternatives?
+
+The accuracy is not an appropriate metric when one of the classes is underrepresented. For example if we have binary classification problem and only 2% of our data are marked as 'success', by simple prediction algorithm that ascribes every datapoint outcome 'failure', we get accuracy 98%. This number is very high, however, it does not mean that our predictive model is very good.
+
+Good alternatives maybe AIC, BIC or AUC. AIC and BIC are closely related and allows for comparison amongst models. The AIC is  given by $$AIC = 2k - 2\ln(\hat{L}) \quad,$$ where $\hat{L}$ denotes the maximum value of the likelihood function for the model and $k$ denotes the number of paramaters. Therefore AIC rewards goodness-of-fit and punishes for additional parameters. Unfortunately, the AIC alone does not say anything about the quality of the model, rather it allows for comparisons amongst models. AUC is denoted by $\int_{0}^{1}{ROC} \quad,$ where ROC stands for *Receiver Operating Curve*. This curve plots the True positive rate against False positive rate. This metric could be very well used in datasets with underrepresented class. 
+
+
+### Question 5 - What is categorical cross entropy?
+
+This cost function is used because of its properties. The function is given by:$$C = - \frac{1}{n}\sum_{x}[y \ln{a} + (1-y) \ln{(1-a)}]$$ where $a = \sigma(z)$ is the output of the last layer. This function is very convenient for backpropagation, as the derivative of this function w.r.t to weights $w$ and bias terms $b$ is equal to: $$\frac{\partial C}{\partial w_{j}} = \frac{1}{n}\sum_{x} x_{j}(\sigma(z) - y)$$
+$$\frac{\partial C}{\partial b} = \frac{1}{n}\sum_{x} (\sigma(z) - y).$$
+
+This means that for large error the neural net learns faster and for smaller error the neural net makes smaller steps.
+
+*Note that the simplified expressions above hold for one neuron net. The generalization to larger nets is straightforward and is thorougly discussed here: http://neuralnetworksanddeeplearning.com/chap3.html#the_cross-entropy_cost_function*
+
+### Question 6 - What are are epochs?
+An epoch is one forward pass and one backward pass of all the points in the training dataset through the neural net.
+
+### Question 7 - What are batches?
+A batches are subsets of training data. The net is training on these batches as it is one of possible ways to avoid overfitting and as it is a very convenient way to reduce the computational complexity. For example if our training dataset has 10000 data points and we select the *batch size* to be 200, we need 500 *iterations* to complete one *epoch*.
+
+### Question 8 - What is the validation split?
+Validation split denotes the ratio of your data you use as the *training set* and the *validation set*. There is possible some confusion with the *test set*. The training set is used to fit the models; the validation set is used to estimate prediction error for model selection; the test set is used for assessment of the generalization error of the final chosen model. Ideally, the test set should be kept in a vault, and be brought out only at the end of the data analysis.
+
+### Question 9 - Build and train a logistic regression model in keras
+
+We'll train the logistic model on *mnist* dataset by using neural networks with only one layer, which is inout and output at the same time. The acivation function of this layer is *sigmoid*. 
+```{r logistic_Q9}
+model <- keras_model_sequential() 
+
+model %>% 
+  layer_dense(units = 10, activation = 'sigmoid', input_shape = c(784))
+
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy')
+)
+
+history <- model %>% fit(
+  x_train, y_train, 
+  epochs = 30, batch_size = 128, 
+  validation_split = 0.2, 
+  verbose = 0
+)
+
+model %>% evaluate(x_test, y_test, verbose = 0)
+```
+
+We can see, that the logistic regression is able to produce good enough results with only one layer, as the accuracy of the model is approximately 0.92.
+
+## Intro
+
+The challenge we faced was to predict whether a seller on P2P selling page would pay for promotion of his advert. The dataset that we used contained 4 million posted adverts with label 0 or 1 denoting whether the seller paid for promotion. The ultimate goal was to allow for more efficient targeting of users that are prone to pay for premium.
+
+### Basic description
+
+The original dataset was given in feather format, which is an efficient tool for storing tables. The original dataframe contained 22 columns (see the table below) and every row corresponded to one advert. The dataset was downloaded from backend of the webpage www.olx.ph., Philippines' P2P selling webpage.
+
+```{r original_dataset, message = FALSE, echo = FALSE, warning = FALSE}
+rm(list=ls())
+df <- read_feather("C:/Users/Samuel/Documents/ML_Naspers/Data/ph_ads_payment_indicator_original/ph_ads_payment_indicator.feather")
+str(df)
+```
+
+``` {r, include = F}
+rm(df)
+```
+
+The column names are self-explanatory in most cases, therefore we address only those that could be ambiguous. *has_gg* stands for *has Gado Gado* (Gado Gado is Polish communication platform). *visible_in_profile* denotes whether the seller has basic contact information visible in his profile. In columns *replies_%* are given the numbers of replies given ad got in respective time period. *is_liquid* is either 0 or 1, which is determined by the number of clicks an advert got in the first two periods of its existence.
+
+#### Data cleansing and tranformations
+
+As the first step, we removed the columns with very low variance, namely the columns *has_skype*, *has_gg*, *has_phone*, *private_business* and *district_id*. For easier manipulation, we converted columns *is_liquid* and *was_promoted* to zeros and ones.
+After this the price outliers were removed. After plotting the distribution of prices we decided to remove prices higher than $8*10^8$. We validated that these prices are higher than a reasonable threshold disclosed in quick analysis of the housing market in Philippines.
+Some of the prices were NAs, these corresponded mostly to job adverts. We decided to keep this information in new column called 'is_price_na' and in the original column replace the NA's by zeros. The columns *replies_%* and *is_liquid* had also some NA's, these were replaced by zeros and no additional columns were created as these seemed to be present as a consequence of temporary malfunction of the system rather than some systematic actions.
+
+####Feature engineering
+
+#####Various features
+
+At first we decided to utilize information from descriptions and titles of the adverts. We added various features, such as count of letters, count of words, count of diacritic characters, count of words in CAPS LOCK etc. We believe these could be at least partly representative proxy for the effort the user put in the creation of advert and therefore could have causal relationship to the 'was_promoted' variable.
+We also added variables capturing the month, weekday and part of the day of posting the advert (for the last variable we divided days into three parts - workhours, evening and night). Moreover, we created variable capturing whether the ad was posted on weekend and variable, whether the ad was posted during the working hours (Monday - Friday, 8am - 5pm). 
+Weather data were added as well as the rain season strongly affects the Philippines. For this reason we added average rainfall, number of average rainy days and average number of sunhours in a day. The granularity of these data was months.
+For every user and category we calculated the absolute number of adverts posted and the ratio of promoted ads. These were added to every user and category, as we hoped for existence of users that systematically buy promotion and categories with high promotion ratio.
+We counted the number of ads posted in specific regions and cities and divided those into five categories representing the size of city or region.
+
+#####Text Features
+
+We used {text2vec} for engineering the basic text features based on *description* and *title* columns. We calculated dtm matrix and weighted it with tf-idf. As the next step we reduced the dimensionality through LDA.
+We implemented language detection from {cld2} package and stored in a column *title_lang* and *description_lang*, whether the language of description is english.
+
+####Oversampling and undersampling
+
+As the *was_promoted* class contains only 2 % of the data, we needed to take steps to balance the dataset. Based on literature, we chose the ratio 50-50 as the goal. We performed random undersampling and random oversampling. Through this we reduced the the dataset to approximately 3 million rows as this allowed for more efficient fine tuning of the neural net and balanced the classes. We tried also SMOTE method, however the computations were far too complex for the available hardware.
+
+
+####Data transformation for Neural Networks
+
+For implementing the neural networks we used {keras} package. This package is originally written in Python, however, RStudio developers implemented it in R.
+So far, we stored the data as tibble or dataframe as these allow for easy and efficient manipulation. However, the functions from {keras} mostly requires matrices, therefore we transformed the data into matrices. We split the dataset for training and testing with ratios 80-20 and 90-10. We also needed to transform the categorical variables into columns containing dummies. This turned out to be a challenging step of the data preparation, as we needed to reasonably prune the feature space due to limited computational capacities.
+
+In question 11 and 12 we'll perform task on the dataset, which was split with 90-10 ratio, as this partition resulted in more accurate predictions and better training of the neural network. Moreover, given task will be performed with parameters, optimizer and structures, which proved to be the best. We chose this parameters based on the results of for-loop, which altered the architecture and parameters of the net and compared the ratio of true positives vs predicted positives and true-negatives vs predicted negatives.
+
+### Question 11 - Logistic regression
+
+```{r dataset, include=F, warning=F, message=F, error=F}
+rm(list=ls())
+load("C:/Users/Samuel/Documents/ML_Naspers/Data/XY_train__XY_test__90_10_split.RData")
+```
+
+The logistic neural network for question 11 consists of a single layer with sigmoid activation function. Although, the validation accuracy of the model was initially pretty good, the model was, in most of the cases, unable to correctly identify, whether the ad was promoted. Instead, it only predicted 0's, even with oversampled dataset.
+
+```{r logistic_regression}
+model <- keras_model_sequential()
+model %>% 
+  layer_dense(units = 2, activation='sigmoid', input_shape = c(ncol(x_train)))
+
+
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_adam(lr=0.00005),
+  metrics = c('categorical_accuracy')
+)
+
+history <- model %>% fit(
+  x_train, y_train, 
+  epochs = 5, batch_size = 1024, 
+  validation_split = 0.1,
+  verbose = 0
+)
+
+model %>% evaluate(x_test, y_test, verbose = 0)
+```
+
+```{r evaluation_logistic, echo=F, include = F}
+result <- cbind(y_test, model %>% predict_classes(x_test))
+
+confusion_table <- matrix(ncol = 2, nrow = 2)
+
+colnames(confusion_table) <- c('TRUE', 'FALSE')
+row.names(confusion_table) <- c('predTRUE', 'predFALSE')
+confusion_table[1, 1] <- sum(result[,2] == 1 & result[,3] == 1)/dim(result)[1]
+confusion_table[2, 1] <- sum(result[,2] == 1 & result[,3] == 0)/dim(result)[1]
+confusion_table[1, 2] <- sum(result[,2] == 0 & result[,3] == 1)/dim(result)[1]
+confusion_table[2, 2] <- sum(result[,2] == 0 & result[,3] == 0)/dim(result)[1]
+```
+
+Below, is the confusion matrix and the positive predictive value and negative predictive value of the model:
+
+```{r confusion_logistic, echo = F}
+print('Confusion matrix:')
+confusion_table
+
+print(paste('Positive predictive value:', confusion_table[1,1]/sum(confusion_table[1,])))
+
+print(paste('Negative predictive value:', confusion_table[2,2]/sum(confusion_table[2,])))
+```
+
+
+### Question 12 - ANN
+
+In this question, we are asked to train the neural network for our challenge. We'd like to stress, that the resulting neural network is a result of 500 different loops, which altered parameters of the neural network, its structure and optimizer. In the end, the best results were given by a neural network with 5 layers. Input layer with *sigmoid* activation function, 3 hidden layers with *leaky ReLU* and output with *softmax* activation. The results varied and even though they are not particulary strong, we believe that these are the best obtainable given the computational power and the dataset.
+
+The model is specified below:
+
+```{r ANN}
+rm(model, history)
+
+model <- keras_model_sequential()
+model %>% 
+  layer_dense(units = 512, activation = 'sigmoid', input_shape = c(ncol(x_train))) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 512) %>%
+  layer_activation_leaky_relu(alpha = 0.3) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 256) %>%
+  layer_activation_leaky_relu(alpha = 0.3) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 64) %>%
+  layer_activation_leaky_relu(alpha = 0.3) %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 2, activation = 'softmax')
+  
+
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_adam(lr=5e-05),
+  metrics = c('categorical_accuracy')
+)
+
+history <- model %>% fit(
+  x_train, y_train, 
+  epochs = 10, batch_size = 4096, 
+  validation_split = 0.1,
+  verbose = 0
+)
+
+model %>% evaluate(x_test, y_test, verbose = 0)
+```
+
+```{r evaluation_ANN, echo=F, include = F}
+result <- cbind(y_test, model %>% predict_classes(x_test))
+
+confusion_table <- matrix(ncol = 2, nrow = 2)
+
+colnames(confusion_table) <- c('TRUE', 'FALSE')
+row.names(confusion_table) <- c('predTRUE', 'predFALSE')
+confusion_table[1, 1] <- sum(result[,2] == 1 & result[,3] == 1)/dim(result)[1]
+confusion_table[2, 1] <- sum(result[,2] == 1 & result[,3] == 0)/dim(result)[1]
+confusion_table[1, 2] <- sum(result[,2] == 0 & result[,3] == 1)/dim(result)[1]
+confusion_table[2, 2] <- sum(result[,2] == 0 & result[,3] == 0)/dim(result)[1]
+```
+
+THe confusion matrix and the positive predictive value and negative predictive value of the model:
+```{r confusion_ANN, echo = F}
+print('Confusion matrix:')
+confusion_table
+
+print(paste('Positive predictive value:', confusion_table[1,1]/sum(confusion_table[1,])))
+
+print(paste('Negative predictive value:', confusion_table[2,2]/sum(confusion_table[2,])))
+```
+
+### Question 13 - conclusions and recommendations
+
+<!-- Although we managed to train a neural network, the results were not as great as we expected, even with the oversampling of the rare events. Another solution to the oversampling of the training set may be the SMOTE algorithm, which we tried to implement at first, but were unable to do so due to computational cappacities. SMOTE tries to extrapolate rare events based on nearest neighbors, instead of just copying the rare events. This might produce better results.  -->
+
+We managed to build and train a neural network that predicts whether a user will pay for a promotion. The performance of the network is not particularly great, however, given the computational power and the dataset, the outcome is decent. We varied the optimizers, loss functions, batch sizes, validation splits and network architectures and found the optimal settings for this task. 
+
+We found out that the underrepresented class does pose a great problem for the analysis. Therefore we oversampled the rare events and undersampled the frequent events. We found out that our computational resources does not allow for use of SMOTE, nevertheless, literature suggests that this method would improve the performance of our model.
+
+We used dropout layers in our model as these prevent overfitting. We concluded that this part of the network was vital and for further analysis we should vary the ratio of neurons dropped.
+
+For the analysis we used {keras} library implemented in R. During the process we experienced numerous problems caused by the interaction of R and Python, for which we would definitely use Python next time. 
+
+We evaluated our model based on the positive predictive value and the negative predicitive value, because we did not get any information from the client which metrics are important for his business case. Next time we would like to spend more time with the client at the beginning of the analysis and get more concrete specifications of the goals (we understand that this case was specific because of the fact that this challenge was part of our grade). Nevertheless, were the goals of the analysis clearer, we would fine tuned the code much better.
+

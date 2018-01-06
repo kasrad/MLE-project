@@ -1,0 +1,115 @@
+---
+title: "Week 2 Assignment"
+author: "Kasparek, Saaliti, Kozuch"
+date: "November 10 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Week 2 Assignment
+
+In this part of our analysis we focused on the engineering of features based on description of the advertisment.
+
+At first we need to import the packages and set seed. We decided to use {text2vec} package, as this should be faster than the {tm} package, which is crucial for the analysis on large datasets.
+
+```{r message=FALSE}
+require(feather)
+require(tidyverse)
+require(stringr)
+require(plotly)
+require(text2vec)
+require(tokenizers)
+require(slam)
+
+set.seed(1211)
+sample <- 0.01
+```
+
+Then we read the dataset and subset it, as we will work with only 1% of the data.
+
+```{r eval=FALSE}
+df <- read_feather("C:/Users/Samuel/Documents/ML_Naspers/Data/ph_ads_payment_indicator.feather")
+df_subset <- df %>% 
+  mutate(rnd = runif(dim(df)[1],0,1)) %>% 
+  filter(rnd < sample)
+remove(df)
+```
+
+Now we need to tokenize our dataset and create vocabulary. We decided to remove all numbers, all words that have less than 3 letters and all redundant whitespaces. We also decided to drop words that have less than 10 occurences in the dataset OR are in less than 0.1% of the documents OR are in more than 70% of the dataset.
+
+```{r eval=FALSE}
+#we created a preprocessing function which replace certain character types
+prep_fun1 <- function(x) {
+  x <- tolower(x)
+  x <- str_replace_all(x, '[:digit:]', ' ')
+  x <- str_replace_all(x, '\\b\\w{1,2}\\b',' ')
+  x <- str_replace_all(x, '[:punct:]', ' ' )
+  x <- str_replace_all(x, '\\s+', ' ')
+  return(x)
+}
+
+tok_fun <- word_tokenizer
+
+#tokenize the subset of dataset
+df_train <- itoken(df_subset$description, 
+                  preprocessor = prep_fun1, 
+                  tokenizer = tok_fun, 
+                  ids = df_subset$id, 
+                  progressbar = FALSE)
+
+#create vocab
+vocab <- create_vocabulary(df_train, stopwords = stopwords("en"))
+pruned_vocab <- prune_vocabulary(vocab, 
+                                term_count_min = 10, 
+                                doc_proportion_max = 0.7,
+                                doc_proportion_min = 0.001)
+
+vectorizer <- vocab_vectorizer(pruned_vocab)
+```
+
+Now we'll create the dtm matrix and print the time elapsed.
+```{r eval=FALSE}
+t1 <- Sys.time()
+dtm_train <- create_dtm(df_train, vectorizer)
+print(difftime(Sys.time(), t1, units = 'sec'))
+```
+
+Let's take a look at the dtm matrix. We will check, which words are most frequent in our dataset and how many of them have more than 2000 occurences.
+```{r eval=FALSE}
+sort(col_sums(dtm_train), decreasing=TRUE)[1:10]
+sum(col_sums(dtm_train) > 2000)
+```
+
+Now we will remove documents with zero words after pruning. 
+```{r eval=FALSE}
+dtm_train <- dtm_train[row_sums(dtm_train)>0, ]
+```
+
+As the next step, the tf-idf statistics will be calculated for every word. Based on value of this statistic, we will further restrict the set of words. Unfortunately, we didn't find any way how to transfrom a DCGmatrix into a tibble other than the one used. The way we did it is not efficient and can crash on larger datasets, as the function 'as.data.frame' stores the whole argument in memory. Nevertheless, as the idf is used to remove frequent terms, that have low semantic contribution, we can adjust instead the 'doc_proportion_max' argument in the 'prune_vocabulary' function.
+
+```{r eval=FALSE}
+tf_dtm_train <- sweep(dtm_train, 1, row_sums(dtm_train), '/')
+tf <- apply(tf_dtm_train, 2, mean)
+rm(tf_dtm_train)
+
+idf <- log2(dim(dtm_train)[1] / (col_sums(dtm_train)))
+
+tf_idf <- tf * idf
+summary(tf_idf)
+
+#remove rows with low tfidf
+dtm_new <- dtm_train[, tf_idf >= median(tf_idf) + 1e-4]
+```
+
+As a last step, we will visualize the most frequent word using wordcloud graphic. Please note that the number of words needs to be carefully chosen as the graphic can contain only some number of words (based on the size of the graph). 
+
+```{r eval=FALSE}
+library(wordcloud)
+freq <- data.frame(freqterms=sort(colSums(as.matrix(dtm_new)), decreasing=TRUE))
+wordcloud(rownames(freq), freq[,1], max.words=50, colors=brewer.pal(3, "Dark2"))
+```
+
+Using this approach, we engineered some features for our consequent analysis. This allows us effectively use the 'description' column in our model and benefit from information this column contains.
